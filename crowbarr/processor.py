@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import tempfile
@@ -281,6 +282,7 @@ def _recognized_words(
     model_cache: Path,
     transcriber,
     windows=None,
+    recognition_lock=contextlib.nullcontext,
 ) -> tuple[list[Word], list[str], bool]:
     stat = media.stat()
     transcript_key = hashlib.sha256(
@@ -313,19 +315,28 @@ def _recognized_words(
                 return words, list(payload.get("issues", [])), True
         except (KeyError, TypeError, ValueError, json.JSONDecodeError):
             pass
-    if windows:
-        from .inference import transcribe_windows
+    # A cached transcript needs no GPU, so only real recognition waits for the slot.
+    with recognition_lock():
+        if windows:
+            from .inference import release_model, transcribe_windows
 
-        words, issues = transcribe_windows(audio, windows, settings, model_cache)
-    else:
-        from .inference import transcribe, transcribe_bounded
-
-        if transcriber is transcribe:
-            words, issues = transcribe_bounded(
-                audio, settings, model_cache, transcript_path.with_suffix(".parts")
-            )
+            try:
+                words, issues = transcribe_windows(audio, windows, settings, model_cache)
+            finally:
+                release_model()
         else:
-            words, issues = transcriber(audio, settings, model_cache)
+            from .inference import release_model, transcribe, transcribe_bounded
+
+            if transcriber is transcribe:
+                try:
+                    words, issues = transcribe_bounded(
+                        audio, settings, model_cache, transcript_path.with_suffix(".parts")
+                    )
+                finally:
+                    # Free the model's GPU memory before the next job may load its own.
+                    release_model()
+            else:
+                words, issues = transcriber(audio, settings, model_cache)
     atomic_write(
         transcript_path,
         json.dumps(
@@ -385,6 +396,18 @@ def process(
                 progress_total=total,
             )
             progress_updated[0] = time.monotonic()
+
+    def recognition_lock():
+        # Only the GPU is contended; CPU processing runs one job at a time anyway.
+        if settings.device != "cuda":
+            return contextlib.nullcontext()
+        from .resources import recognition_slot
+
+        return recognition_slot(
+            directory,
+            waiting=lambda: db.update(job["id"], stage="Waiting for the GPU; another job is recognizing speech"),
+            acquired=lambda: db.update(job["id"], stage=recognition_stage[0]),
+        )
 
     if transcriber is None:
         transcribe.progress = progress
@@ -528,7 +551,8 @@ def process(
         db.update(job["id"], stage=recognition_stage[0])
         if cache_transcript:
             words, transcription_issues, transcript_cache_hit = _recognized_words(
-                media, audio, settings, directory, cache, transcriber, windows=windows
+                media, audio, settings, directory, cache, transcriber, windows=windows,
+                recognition_lock=recognition_lock,
             )
             # Say so plainly: a reused transcript finishes in seconds, and that speed
             # must not be mistaken for what a file takes the first time.
@@ -575,7 +599,8 @@ def process(
             recognition_stage[0] = "Sample cannot settle a change; auditing against full dialogue"
             db.update(job["id"], stage=recognition_stage[0])
             words, transcription_issues, transcript_cache_hit = _recognized_words(
-                media, audio, settings, directory, cache, transcriber
+                media, audio, settings, directory, cache, transcriber,
+                recognition_lock=recognition_lock,
             )
             warnings.extend(transcription_issues)
             windows = []
