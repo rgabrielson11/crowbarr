@@ -815,7 +815,7 @@ function settingsPage() {
     content =
       settingPanel(
         "Resource limits",
-        "Crowbarr processes one job at a time. These limits decide when a job may start.",
+        "Crowbarr runs one job at a time, or up to Parallel jobs (GPU) at once when processing on the graphics card. These limits decide when each job may start.",
         numeric(
           "min_free_ram_mb",
           "Minimum RAM headroom (MB)",
@@ -828,7 +828,7 @@ function settingsPage() {
             "Minimum free GPU memory (MB)",
             128,
             262144,
-            "Hold a job when the graphics card has less free memory than this. Ignored when processing on the CPU.",
+            "Hold a job when the graphics card has less free memory than this. While another job is still loading its model, about 1.2 GB is counted for it. Ignored when processing on the CPU.",
           ) +
           numeric(
             "max_cpu_load",
@@ -848,14 +848,14 @@ function settingsPage() {
           "Cooldown between jobs (seconds)",
           0,
           86400,
-          "Wait this long after a background job before starting the next one.",
+          "Wait this long after a background job before starting the next one. With parallel jobs, each slot waits on its own.",
         ) +
           numeric(
             "background_budget_minutes",
             "Processing budget per hour (minutes)",
             1,
             60,
-            "Minutes in each hour that background jobs may run.",
+            "Minutes in each hour that background jobs may run. Jobs running side by side count once, so 60 means no limit.",
           ) +
           select(
             "quiet_hour_start",
