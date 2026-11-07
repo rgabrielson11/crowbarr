@@ -131,6 +131,9 @@ class Settings(BaseModel):
     # The others keep working through their CPU stages, so throughput barely changes,
     # while the card (often shared with an LLM) never carries two recognitions at once.
     one_recognition_at_a_time: bool = True
+    # A file Crowbarr has never seen that was written recently is a new download, the
+    # file most likely to be watched next, so it is queued ahead of the backlog.
+    prioritize_new_files: bool = True
     scan_seconds: int = Field(default=300, ge=10, le=86400)
     settle_seconds: int = Field(default=120, ge=0, le=86400)
     min_duration_minutes: int = Field(default=10, ge=0, le=600)
