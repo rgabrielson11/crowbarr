@@ -7,7 +7,7 @@
 # rebasing the fork onto a newer upstream release.
 #
 #   docker build -f Dockerfile.fork -t crowbarr-fork:latest-cuda .
-ARG BASE=ghcr.io/amanofvaly/crowbarr:latest-cuda@sha256:84b9d98f6ff71c3c4042b571f089835b136873bcce01a60205bed4996fa6bfe1
+ARG BASE=ghcr.io/amanofvaly/crowbarr:latest-cuda@sha256:b1041fbc3a00634f695141cac0602733c45486acb4f4a3bd20a84c40f17e8349
 
 FROM python:3.12-slim-bookworm AS application
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
