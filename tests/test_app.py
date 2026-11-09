@@ -613,3 +613,29 @@ def test_bulk_retry_respects_the_search_filter(client):
     assert (db.get(ids["d.mkv"])["state"], db.get(ids["d.mkv"])["priority"]) == ("queued", 40)
     assert db.get(ids["a.mkv"])["state"] == "review"
     assert client.post("/api/jobs/bulk", headers=auth(client), json={"action": "delete"}).status_code == 422
+
+
+def test_a_passing_connection_test_clears_the_sync_failure_banner(client, monkeypatch):
+    import crowbarr.app as app_module
+
+    db = client.app.state.db
+    db.notice("sonarr", "Sonarr library sync failed (ConnectError). Check its URL, API key, and path mappings.")
+    db.notice("radarr", "Radarr library sync failed (ConnectError). Check its URL, API key, and path mappings.")
+    monkeypatch.setattr(app_module, "check_connection", lambda *args: {"ok": True})
+    assert client.post("/api/connections/sonarr/test", headers=auth(client)).status_code == 200
+    names = [n["name"] for n in db.snapshot()["notices"]]
+    assert "sonarr" not in names and "radarr" in names
+
+
+def test_a_failing_connection_test_keeps_the_banner(client, monkeypatch):
+    import crowbarr.app as app_module
+
+    db = client.app.state.db
+    db.notice("sonarr", "Sonarr library sync failed (ConnectError). Check its URL, API key, and path mappings.")
+
+    def fail(*args):
+        raise ConnectionError("down")
+
+    monkeypatch.setattr(app_module, "check_connection", fail)
+    assert client.post("/api/connections/sonarr/test", headers=auth(client)).status_code == 400
+    assert [n["name"] for n in db.snapshot()["notices"]] == ["sonarr"]

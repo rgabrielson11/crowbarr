@@ -937,7 +937,7 @@ def create_app(directory: Path | None = None, background: bool = True) -> FastAP
         if name not in {"sonarr", "radarr", "bazarr", "plex"}:
             raise HTTPException(404, "Unknown integration")
         try:
-            return check_connection(name, getattr(store.get(), name), store.get())
+            result = check_connection(name, getattr(store.get(), name), store.get())
         except Exception as error:
             # Do not reflect URLs or upstream response bodies containing secrets.
             raise HTTPException(
@@ -945,6 +945,9 @@ def create_app(directory: Path | None = None, background: bool = True) -> FastAP
                 f"Could not connect to {name.title()} ({type(error).__name__}). "
                 "Check the saved URL, API key, and network access.",
             ) from None
+        # A passing test proves the connection; an old "sync failed" banner would only mislead.
+        db.clear_sync_failure(name)
+        return result
 
     @app.post("/api/hooks/{name}", dependencies=[Depends(authenticate)], status_code=202)
     def hook(name: str, payload: dict):
